@@ -46,6 +46,7 @@ open ../out/report.html
 
 - 같은 옷인지 애매한 쌍은 보고서에서 "같은 옷 / 다른 옷"으로 답한다. 내려받은 `decisions.json`을 `out/`에 넣고 `uv run closet-scan organize ../out`을 다시 실행하면 반영된다.
 - Claude 태깅(분류·소재·이름)과 애매한 쌍 자동 검증: `uv sync --extra claude` 후 `ANTHROPIC_API_KEY`를 설정하고 `--tagger claude --verify`.
+- 옷 한 벌 단위 검출(실험): `--detector vlm`. 원피스를 한 벌로, 아우터와 안쪽 상의를 따로 잡는다. API 키 필요. bbox 평가는 `closet-scan eval-bbox`.
 - M0 정답 비교: [m0/README.md](m0/README.md)
 - 설계와 한계: [docs/SCANNER.md](docs/SCANNER.md)
 - 사용자가 할 일(M0 절차 요약): [intend.md](intend.md)

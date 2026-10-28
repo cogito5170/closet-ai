@@ -7,7 +7,7 @@
 
 | 순서 | 할 일 | 시간 | 결과물 |
 | --- | --- | --- | --- |
-| 1 | PR #1 합치기, Mac에 준비 | 10분 | `~/closet-ai` |
+| 1 | PR #2 합치기, Mac에 준비 | 10분 | `~/closet-ai` |
 | 2 | 사진 50장 고르기 | 15분 | `m0/photos/` |
 | 3 | 정답 라벨 달기 (스캔 전에) | 45분 | `m0/labels.csv` |
 | 4 | 스캔과 평가 실행 | 5분 | `out/m0-result.md`, `out/report.html` |
@@ -15,7 +15,7 @@
 
 ## 1. 준비 (한 번만)
 
-1. [PR #1](https://github.com/cogito5170/closet-ai/pull/1)에서 **Merge pull request**를 누릅니다.
+1. [PR #2](https://github.com/cogito5170/closet-ai/pull/2)에서 **Merge pull request**를 누릅니다. 이미 clone했다면 `cd ~/closet-ai && git pull`만 하고 2번 줄의 `git clone`은 건너뜁니다.
 2. 터미널에서 실행합니다. `uv`가 이미 있으면 첫 줄은 건너뜁니다.
 
 ```
@@ -23,7 +23,7 @@ brew install uv
 cd ~
 git clone https://github.com/cogito5170/closet-ai.git
 cd ~/closet-ai/scanner
-uv sync
+uv sync --extra claude
 uv run closet-scan models
 ```
 
@@ -67,12 +67,18 @@ mv ~/Downloads/labels.csv ~/closet-ai/m0/labels.csv
 
 ## 4. 스캔과 평가
 
+옷 검출은 Claude가 옷 한 벌 단위로 합니다(2026-10-28 결정). Anthropic API 키가 필요하고, 사진은 긴 변 1024px로 줄여 보냅니다. 첫 줄의 `여기에_키`를 실제 키로 바꿉니다.
+
 ```
+export ANTHROPIC_API_KEY=여기에_키
 cd ~/closet-ai/scanner
-uv run closet-scan scan ../m0/photos --out ../out
+uv run closet-scan scan ../m0/photos --out ../out --detector vlm
 uv run closet-scan eval ../out ../m0/labels.csv --sweep --md ../out/m0-result.md
 open ../out/report.html
 ```
+
+- 실행 끝에 검출 모델 호출 수와 토큰 수가 나옵니다. 비용 계산에 쓰니 그 줄도 함께 올려 주세요.
+- 비교용으로 예전 부위 분할 방식도 돌려 볼 수 있습니다: `uv run closet-scan scan ../m0/photos --out ../out-parts` 후 같은 `eval`을 `../out-parts`로 실행합니다.
 
 - `m0-result.md`: 지표별 값과 합격·불합격 표입니다. 기준은 미리 정해 두었습니다(검출 ≥ 85%, 같은 옷 판별 F1 ≥ 0.80, 과병합 ≤ 5%, 옷 10벌당 수정 ≤ 3).
 - `report.html`: 찾은 옷과 "같은 옷인가요?" 질문이 있습니다. 평가가 끝난 뒤에 답해 보세요. 답하는 경험 자체가 앱의 확인 화면 시안입니다.
@@ -82,16 +88,15 @@ open ../out/report.html
 이 스레드에 `~/closet-ai/out/m0-result.md`를 올리고, `report.html`을 보며 느낀 점을 한두 줄 적어 주세요. 예를 들면 "이 옷을 못 찾았다", "질문이 너무 많다" 같은 것입니다.
 `out/` 폴더에는 옷 crop 이미지가 있어 GitHub에 올라가지 않게 해 두었습니다.
 
-## 선택: Claude 태깅까지 비교하기
+## 선택: 애매한 쌍을 Claude로 검증하기
 
-원피스·아우터 같은 세부 분류와 옷 이름은 Claude 태깅을 켜야 나옵니다. Anthropic API 키가 있으면 아래를 실행하고, 결과 파일도 함께 올려 주세요. 사진 50장에 드는 비용은 1달러를 크게 밑돕니다(Claude Haiku 5.5, 옷 crop 1장당 1회 호출). 이 값은 추정이고, 실행 끝에 실제 토큰 수가 출력됩니다.
+"같은 옷인가요?" 질문 일부를 Claude가 먼저 판단하게 하면 질문 수가 줄어듭니다. 4번을 마친 뒤 아래를 실행하고 결과 파일도 함께 올려 주세요. 검출 결과는 캐시를 다시 쓰므로 검출 비용이 다시 들지 않습니다.
 
 ```
 cd ~/closet-ai/scanner
-uv sync --extra claude
-export ANTHROPIC_API_KEY=여기에_키
-uv run closet-scan scan ../m0/photos --out ../out-claude --tagger claude --verify
-uv run closet-scan eval ../out-claude ../m0/labels.csv --md ../out-claude/m0-result.md
+cp -R ../out ../out-verify
+uv run closet-scan organize ../out-verify --tagger claude --verify
+uv run closet-scan eval ../out-verify ../m0/labels.csv --md ../out-verify/m0-result.md
 ```
 
 ## M0 이후에 정할 것 (지금은 하지 않아도 됩니다)

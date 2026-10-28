@@ -85,7 +85,12 @@ def match(garments: list[dict], garment_item: dict, labels: list[dict]):
         used = set()
         for g in pred_by_photo[photo]:
             grp = group_of(g)
+            if grp not in GT_GROUP.values():  # other(점프수트 등)는 주 평가 밖
+                continue
             cand = [i for i, r in enumerate(gts) if i not in used and GT_GROUP[r["category"]] == grp]
+            # 옷 단위 검출처럼 세부 분류가 있으면 같은 분류의 정답부터 대응한다
+            cat = (g.get("tags") or {}).get("category")
+            cand.sort(key=lambda i: gts[i]["category"] != cat)
             if not cand and grp == "lower":  # 원피스의 아랫부분
                 cand = [i for i, r in enumerate(gts) if i not in used and r["category"] == "dress"]
             if cand:
