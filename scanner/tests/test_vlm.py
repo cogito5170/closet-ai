@@ -98,3 +98,17 @@ def test_vlm_photo_to_garments(vis, tmp_path):
     (tmp_path / "garments.json").write_text(json.dumps([g.to_json() for g in r.garments], ensure_ascii=False))
     ex = export_predictions(tmp_path)
     assert [g["category"] for g in ex["photos"][0]["garments"]] == ["outer", "top"]
+
+
+def test_m0_match_prefers_same_category():
+    from closet_scanner.evaluate import match
+
+    def g(i, cat, region):
+        return {"id": f"a.jpg#{i}", "photo": "a.jpg", "region": region, "tags": {"category": cat}}
+
+    garments = [g(1, "top", "upper"), g(2, "outer", "upper"), g(3, "other", "other")]
+    labels = [{"photo": "a.jpg", "item": "coat", "category": "outer"},
+              {"photo": "a.jpg", "item": "tee", "category": "top"}]
+    pairs, missed, fp, _ = match(garments, {x["id"]: "i" for x in garments}, labels)
+    assert {(p["tags"]["category"], r["category"]) for p, r in pairs} == {("top", "top"), ("outer", "outer")}
+    assert not missed and not fp  # other는 오검출로 세지 않는다

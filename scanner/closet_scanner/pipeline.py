@@ -159,6 +159,8 @@ def organize(out: Path, ccfg: ClusterConfig | None = None, tagger=None, verify=F
         tags_by_rep = {}
         for it in items:
             rep = next(g for g in garments if g.get("crop_file") == it["rep_crop"])
+            if (rep.get("tags") or {}).get("source") == "vlm":  # 검출 모델이 이미 분류함
+                continue
             t = tagger.tag(out / "crops" / rep["crop_file"], rep["region"])
             if t:
                 tags_by_rep[it["item_id"]] = t
