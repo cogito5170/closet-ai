@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+scanner/.models/
+out/
+*.egg-info/
+.DS_Store
+# 개인 사진과 라벨은 저장소에 올리지 않는다
+m0/photos/
+m0/labels*.csv
+.env

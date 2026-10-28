@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>M0 정답 라벨</title>
+<style>
+:root{--bg:#f6f5f2;--fg:#1d1d1b;--mut:#6b6a66;--card:#fff;--line:#e3e1dc;--acc:#2b4a8b;--ok:#2f7d4f}
+@media (prefers-color-scheme:dark){:root{--bg:#161615;--fg:#eceae4;--mut:#9a988f;--card:#20201e;--line:#34332f;--acc:#8fb0f0;--ok:#6fc28f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line)}
+header h1{font-size:17px;margin:0 8px 0 0}
+button,select,input{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+button{cursor:pointer}button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.wrap{display:grid;grid-template-columns:200px 1fr 340px;height:calc(100vh - 58px)}
+@media (max-width:900px){.wrap{grid-template-columns:1fr;height:auto}}
+#list{overflow:auto;border-right:1px solid var(--line);padding:8px}
+#list div{padding:4px 8px;border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#list div.cur{background:var(--acc);color:#fff}#list div.done::before{content:"✓ ";color:var(--ok)}#list div.cur.done::before{color:#fff}
+#stage{display:flex;align-items:center;justify-content:center;background:#808080;min-height:300px}
+#stage img{max-width:100%;max-height:calc(100vh - 58px);object-fit:contain}
+#side{overflow:auto;padding:12px 14px;border-left:1px solid var(--line)}
+h2{font-size:14px;margin:16px 0 6px;color:var(--mut);font-weight:600}
+.chip{display:flex;justify-content:space-between;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-bottom:6px}
+.chip small{color:var(--mut)}.chip button{padding:2px 8px}
+.pick{display:flex;flex-wrap:wrap;gap:6px}.pick button{font-size:13px}
+.row{display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap}.row>*{flex:1;min-width:0}
+.mut{color:var(--mut);font-size:13px}
+.empty{padding:40px;text-align:center;color:#fff}
+kbd{border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>M0 정답 라벨</h1>
+  <label><button class="pri" onclick="document.getElementById('dir').click()">사진 폴더 열기</button>
+    <input id="dir" type="file" webkitdirectory multiple hidden></label>
+  <button onclick="exportCsv()">labels.csv 내려받기</button>
+  <label><button onclick="document.getElementById('imp').click()">이전 CSV 불러오기</button>
+    <input id="imp" type="file" accept=".csv" hidden></label>
+  <span class="mut" id="prog"></span>
+</header>
+<div class="wrap">
+  <div id="list"></div>
+  <div id="stage"><div class="empty">사진 폴더를 여세요. 사진은 이 브라우저 밖으로 나가지 않습니다.<br>HEIC는 Safari에서 보입니다.</div></div>
+  <div id="side">
+    <p class="mut">사진에 보이는 옷을 모두 적으세요. <b>같은 옷은 모든 사진에서 같은 번호</b>여야 합니다. 스캐너 결과를 보기 전에 라벨하세요.</p>
+    <h2>이 사진의 옷</h2>
+    <div id="here"></div>
+    <div class="row"><button onclick="markDone()" id="doneBtn">이 사진 완료 <kbd>Enter</kbd></button></div>
+    <h2>지금까지 등록한 옷에서 고르기</h2>
+    <div class="row"><input id="q" placeholder="이름으로 찾기"></div>
+    <div class="pick" id="pick"></div>
+    <h2>새 옷 추가 <kbd>N</kbd></h2>
+    <div class="row"><input id="nName" placeholder="이름 (예: 검정 크루넥 니트)"></div>
+    <div class="row"><select id="nCat"></select><select id="nCol"></select></div>
+    <div class="row"><button class="pri" onclick="addNew()">추가</button></div>
+    <p class="mut"><kbd>←</kbd> <kbd>→</kbd> 사진 이동. 진행 상황은 이 브라우저에 자동 저장됩니다.</p>
+  </div>
+</div>
+<script>
+const CATS={top:'상의',bottom:'하의',outer:'아우터',dress:'원피스',shoes:'신발',bag:'가방',hat:'모자',accessory:'액세서리'};
+const PREFIX={top:'T',bottom:'B',outer:'O',dress:'D',shoes:'S',bag:'G',hat:'H',accessory:'A'};
+const COLORS={black:'검정',white:'흰색',gray:'회색',lightgray:'밝은 회색',beige:'베이지',brown:'갈색',red:'빨강',pink:'분홍',orange:'주황',yellow:'노랑',khaki:'카키',green:'초록',mint:'민트',skyblue:'하늘색',blue:'파랑',denim:'데님',navy:'네이비',purple:'보라',multi:'여러 색'};
+const IMG=/\.(jpe?g|png|webp|heic|heif)$/i;
+let files=[],cur=0,folder='',st={items:{},photos:{}},shown=null;
+// st.items[id]={name,category,color}; st.photos[photo]={items:[id],done:bool}
+
+for(const[k,v]of Object.entries(CATS))nCat.add(new Option(v,k));
+nCol.add(new Option('색 (선택)',''));for(const[k,v]of Object.entries(COLORS))nCol.add(new Option(v,k));
+
+function key(){return 'm0-labels:'+folder}
+function save(){try{localStorage.setItem(key(),JSON.stringify(st))}catch(e){}}
+function load(){try{const s=localStorage.getItem(key());if(s)st=JSON.parse(s)}catch(e){}}
+function rel(f){const p=f.webkitRelativePath||f.name;const i=p.indexOf('/');return i<0?p:p.slice(i+1)}
+function ph(){return files[cur]?rel(files[cur]):null}
+function rec(p){return st.photos[p]||(st.photos[p]={items:[],done:false})}
+
+dir.onchange=e=>{
+  files=[...e.target.files].filter(f=>IMG.test(f.name)&&!f.name.startsWith('.')).sort((a,b)=>rel(a).localeCompare(rel(b)));
+  if(!files.length)return;
+  folder=(files[0].webkitRelativePath||'').split('/')[0]||'photos';
+  st={items:{},photos:{}};load();cur=0;render();
+};
+imp.onchange=async e=>{
+  const text=await e.target.files[0].text();const lines=text.replace(/^﻿/,'').split(/\r?\n/).filter(Boolean);
+  const head=parseCsvLine(lines[0]);const ix=n=>head.indexOf(n);
+  for(const l of lines.slice(1)){const c=parseCsvLine(l);const p=c[ix('photo')],id=c[ix('item')];
+    if(!p)continue;const r=rec(p);r.done=true;
+    if(id&&id!=='-'){st.items[id]=st.items[id]||{name:c[ix('note')]||id,category:c[ix('category')],color:c[ix('color')]||''};
+      if(!r.items.includes(id))r.items.push(id)}}
+  save();render();
+};
+function parseCsvLine(l){const out=[];let s='',q=false;for(let i=0;i<l.length;i++){const ch=l[i];
+  if(q){if(ch=='"'&&l[i+1]=='"'){s+='"';i++}else if(ch=='"')q=false;else s+=ch}
+  else if(ch=='"')q=true;else if(ch==','){out.push(s);s=''}else s+=ch}out.push(s);return out}
+
+function render(){
+  const p=ph();if(!p)return;
+  list.innerHTML='';files.forEach((f,i)=>{const d=document.createElement('div');d.textContent=rel(f);
+    if(i===cur)d.className='cur';if(st.photos[rel(f)]?.done)d.classList.add('done');d.onclick=()=>{cur=i;render()};list.appendChild(d)});
+  list.children[cur]?.scrollIntoView({block:'nearest'});
+  if(shown!==files[cur]){shown=files[cur];
+    const url=URL.createObjectURL(files[cur]);stage.innerHTML='';const img=new Image();img.src=url;img.onload=()=>URL.revokeObjectURL(url);
+    img.onerror=()=>{stage.innerHTML='<div class=empty>이 브라우저에서 열 수 없는 형식입니다 (HEIC는 Safari).</div>'};stage.appendChild(img)}
+  const r=rec(p);here.innerHTML='';
+  if(!r.items.length)here.innerHTML='<p class=mut>아직 없음. 옷이 안 보이는 사진이면 그대로 완료하세요.</p>';
+  r.items.forEach(id=>{const it=st.items[id];const d=document.createElement('div');d.className='chip';
+    d.innerHTML=`<span><b>${id}</b> ${esc(it.name)} <small>${CATS[it.category]}${it.color?' · '+COLORS[it.color]:''}</small></span>`;
+    const b=document.createElement('button');b.textContent='빼기';b.onclick=()=>{r.items=r.items.filter(x=>x!==id);r.done=false;save();render()};
+    d.appendChild(b);here.appendChild(d)});
+  doneBtn.textContent=r.done?'완료됨 (다시 누르면 해제)':'이 사진 완료 (Enter)';
+  renderPick();
+  const done=Object.values(st.photos).filter(x=>x.done).length;
+  prog.textContent=`완료 ${done}/${files.length}장 · 옷 ${Object.keys(st.items).length}벌`;
+}
+function renderPick(){
+  const p=ph(),r=rec(p),q=document.getElementById('q').value.trim();pick.innerHTML='';
+  Object.entries(st.items).filter(([id,it])=>!r.items.includes(id)&&(!q||it.name.includes(q)||id.includes(q)))
+    .sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true})).forEach(([id,it])=>{
+      const b=document.createElement('button');b.textContent=`${id} ${it.name}`;b.title=CATS[it.category];
+      b.onclick=()=>{r.items.push(id);save();render()};pick.appendChild(b)});
+}
+document.getElementById('q').oninput=renderPick;
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function addNew(){
+  const p=ph();if(!p)return;const cat=nCat.value,name=nName.value.trim()||CATS[cat];
+  const n=Object.keys(st.items).filter(id=>id.startsWith(PREFIX[cat])).length+1;
+  let id=PREFIX[cat]+String(n).padStart(2,'0');while(st.items[id])id=PREFIX[cat]+String(+id.slice(1)+1).padStart(2,'0');
+  st.items[id]={name,category:cat,color:nCol.value};rec(p).items.push(id);nName.value='';nCol.value='';
+  if(document.activeElement)document.activeElement.blur();save();render();
+}
+function markDone(){const r=rec(ph());r.done=!r.done;save();if(r.done&&cur<files.length-1)cur++;render()}
+function exportCsv(){
+  const rows=[['photo','item','category','color','note']];
+  for(const f of files){const p=rel(f),r=st.photos[p];if(!r||!r.done)continue;
+    if(!r.items.length)rows.push([p,'-','','','옷 없음']);
+    for(const id of r.items){const it=st.items[id];rows.push([p,id,it.category,it.color,it.name])}}
+  const csv='﻿'+rows.map(r=>r.map(v=>/[",\n]/.test(v)?'"'+String(v).replace(/"/g,'""')+'"':v).join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='labels.csv';a.click();
+}
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'){if(e.key==='Enter'&&e.target.id==='nName'&&nName.value.trim())addNew();return}
+  if(e.key==='ArrowRight'&&cur<files.length-1){cur++;render()}
+  else if(e.key==='ArrowLeft'&&cur>0){cur--;render()}
+  else if(e.key==='Enter'){e.preventDefault();markDone()}
+  else if(e.key==='n'||e.key==='N'){e.preventDefault();nName.focus()}
+});
+</script>
+</body>
+</html>
