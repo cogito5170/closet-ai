@@ -43,6 +43,7 @@ class Garment:
     colors: list[dict]
     flags: list[str] = field(default_factory=list)
     crop_file: str = ""
+    tags: dict = field(default_factory=dict)  # 검출 모델·태거가 붙인 분류
     embedding: np.ndarray | None = None
 
     def to_json(self) -> dict:

@@ -34,16 +34,26 @@ def _write(path: Path, data) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1))
 
 
-def _fingerprint(p: Path) -> str:
+def _fingerprint(p: Path, detector: str = "parts") -> str:
     st = p.stat()
-    return f"{st.st_size}-{int(st.st_mtime)}"
+    base = f"{st.st_size}-{int(st.st_mtime)}"
+    return base if detector == "parts" else f"{base}-{detector}"
 
 
-def scan(photos_dir: Path, out: Path, cfg: Config | None = None, log=print) -> None:
-    """새 사진만 분석해 garments.json·embeddings.npy에 덧붙인다(증분 스캔)."""
+def scan(photos_dir: Path, out: Path, cfg: Config | None = None, log=print,
+         detector: str = "parts", detect_model: str | None = None) -> None:
+    """새 사진만 분석해 garments.json·embeddings.npy에 덧붙인다(증분 스캔).
+
+    detector: parts(부위 분할, 기본) 또는 vlm(옷 한 벌 단위 검출, vlm.py).
+    """
     from .vision import Vision
 
     cfg = cfg or Config()
+    det = None
+    if detector == "vlm":
+        from .vlm import VLMDetector
+
+        det = VLMDetector(out / "detect_cache.json", **({"model": detect_model} if detect_model else {}))
     out.mkdir(parents=True, exist_ok=True)
     (out / "crops").mkdir(exist_ok=True)
     photos = _read(out / "photos.json", {})
@@ -54,7 +64,7 @@ def scan(photos_dir: Path, out: Path, cfg: Config | None = None, log=print) -> N
     todo = []
     for p in files:
         pid = p.relative_to(photos_dir).as_posix()
-        if photos.get(pid, {}).get("fingerprint") != _fingerprint(p):
+        if photos.get(pid, {}).get("fingerprint") != _fingerprint(p, detector):
             todo.append((pid, p))
     log(f"사진 {len(files)}장 중 새로 분석할 사진 {len(todo)}장")
     if not todo:
@@ -69,20 +79,27 @@ def scan(photos_dir: Path, out: Path, cfg: Config | None = None, log=print) -> N
     t0 = time.time()
     for k, (pid, p) in enumerate(todo, 1):
         try:
-            r = analyze_photo(p, vis, cfg, pid, out / "crops")
+            if det is not None:
+                from .vlm import analyze_photo_vlm
+
+                r = analyze_photo_vlm(p, vis, det, pid, out / "crops")
+            else:
+                r = analyze_photo(p, vis, cfg, pid, out / "crops")
         except Exception as e:  # 손상된 파일 하나로 전체가 멈추지 않게
             photos[pid] = {"status": "error", "reason": f"{type(e).__name__}: {e}",
-                           "fingerprint": _fingerprint(p), "garments": 0}
+                           "fingerprint": _fingerprint(p, detector), "garments": 0}
             log(f"[{k}/{len(todo)}] {pid}: 오류 {e}")
             continue
-        photos[pid] = {"status": r.status, "reason": r.reason, "fingerprint": _fingerprint(p),
+        photos[pid] = {"status": r.status, "reason": r.reason, "fingerprint": _fingerprint(p, detector),
                        "garments": len(r.garments)}
         for g in r.garments:
             garments.append(g.to_json())
             emb.append(g.embedding)
-        regions = ", ".join(g.region for g in r.garments) or r.reason
+        regions = ", ".join(g.tags.get("category", g.region) for g in r.garments) or r.reason
         log(f"[{k}/{len(todo)}] {pid}: {regions}")
     log(f"분석 {len(todo)}장, {time.time() - t0:.1f}초")
+    if det is not None:
+        log(f"검출 모델 호출 {det.calls}회, 입력 {det.input_tokens} / 출력 {det.output_tokens} 토큰")
 
     _write(out / "photos.json", photos)
     _write(out / "garments.json", garments)

@@ -3,6 +3,8 @@
   closet-scan scan  <사진폴더> --out <출력>   분석 + 묶기 + 보고서
   closet-scan organize <출력>                결정(decisions.json) 반영해 다시 묶기
   closet-scan eval  <출력> <labels.csv>      M0 지표 (--sweep: 기준값 탐색)
+  closet-scan export <출력>                  옷 단위 predictions.json으로 내보내기
+  closet-scan eval-bbox <예측.json> <정답.json>  옷 한 벌 단위 bbox 검출 평가
   closet-scan models                         모델만 미리 내려받기
 """
 
@@ -63,6 +65,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("photos", type=Path)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--include-group", action="store_true", help="여러 명 사진에서도 가장 큰 사람의 옷을 쓴다")
+    p.add_argument("--detector", choices=["parts", "vlm"], default="parts",
+                   help="parts: 부위 분할(기본), vlm: 옷 한 벌 단위 검출(실험, API 키 필요)")
+    p.add_argument("--detect-model", dest="detect_model", help="vlm 검출 모델 (기본 claude-sonnet-5-5)")
     cluster_args(p)
 
     p = sub.add_parser("organize", help="decisions.json을 반영해 다시 묶는다")
@@ -73,6 +78,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("out", type=Path)
     p.add_argument("labels", type=Path)
     p.add_argument("--sweep", action="store_true", help="묶기 기준값 격자 탐색")
+    p.add_argument("--md", type=Path, help="결과를 마크다운으로 저장")
+
+    p = sub.add_parser("export", help="스캐너 출력을 옷 단위 predictions.json으로 내보낸다")
+    p.add_argument("out", type=Path)
+    p.add_argument("--to", type=Path, help="저장 경로 (기본 <출력>/predictions.json)")
+
+    p = sub.add_parser("eval-bbox", help="옷 한 벌 단위 bbox 검출 평가")
+    p.add_argument("pred", type=Path)
+    p.add_argument("gt", type=Path)
+    p.add_argument("--iou", type=float, nargs="+", default=[0.5, 0.25], help="IoU 기준 (기본 0.5 0.25)")
+    p.add_argument("--no-merge-shoes", dest="merge_shoes", action="store_false",
+                   help="신발을 켤레 하나로 합치지 않는다")
     p.add_argument("--md", type=Path, help="결과를 마크다운으로 저장")
 
     sub.add_parser("models", help="모델 미리 내려받기")
@@ -88,12 +105,28 @@ def main(argv: list[str] | None = None) -> int:
             ap.error("--verify는 --tagger claude와 함께 써야 합니다")
         from .pipeline import scan
 
-        scan(a.photos, a.out, Config(include_group=a.include_group))
+        scan(a.photos, a.out, Config(include_group=a.include_group), detector=a.detector,
+             detect_model=a.detect_model)
         _organize(a, a.out)
     elif a.cmd == "organize":
         if a.verify and a.tagger != "claude":
             ap.error("--verify는 --tagger claude와 함께 써야 합니다")
         _organize(a, a.out)
+    elif a.cmd == "export":
+        from .bbox_eval import export_predictions
+
+        to = a.to or a.out / "predictions.json"
+        to.write_text(json.dumps(export_predictions(a.out), ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"저장: {to}")
+    elif a.cmd == "eval-bbox":
+        from .bbox_eval import evaluate_bbox
+        from .bbox_eval import to_markdown as bbox_md
+
+        r = evaluate_bbox(a.pred, a.gt, tuple(a.iou), a.merge_shoes)
+        md = bbox_md(r)
+        print(md)
+        if a.md:
+            a.md.write_text(md, encoding="utf-8")
     elif a.cmd == "eval":
         from .evaluate import evaluate, oracle_questions, sweep, to_markdown
 
