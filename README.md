@@ -48,6 +48,7 @@ open ../out/report.html
 - Claude 태깅(분류·소재·이름)과 애매한 쌍 자동 검증: `uv sync --extra claude` 후 `ANTHROPIC_API_KEY`를 설정하고 `--tagger claude --verify`.
 - M0 정답 비교: [m0/README.md](m0/README.md)
 - 설계와 한계: [docs/SCANNER.md](docs/SCANNER.md)
+- 사용자가 할 일(M0 절차 요약): [intend.md](intend.md)
 
 ## 앱 시작하기 (M1부터)
 1. 저장소 클론
